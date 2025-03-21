@@ -38,7 +38,9 @@ public class LocalPlayer : ILocalNitroxPlayer
     public ushort? PlayerId => multiplayerSession?.Reservation?.PlayerId;
     public PlayerSettings PlayerSettings => multiplayerSession.PlayerSettings;
 
-    public Perms Permissions;
+    public Perms Permissions { get; set; }
+    public IntroCinematicMode IntroCinematicMode { get; set; }
+    public bool KeepInventoryOnDeath { get; set; }
 
     public LocalPlayer(IMultiplayerSession multiplayerSession, IPacketSender packetSender, ThrottledPacketSender throttledPacketSender)
     {
@@ -49,26 +51,20 @@ public class LocalPlayer : ILocalNitroxPlayer
         playerModel = new Lazy<GameObject>(() => Body.RequireGameObject("player_view"));
         bodyPrototype = new Lazy<GameObject>(CreateBodyPrototype);
         Permissions = Perms.PLAYER;
+        IntroCinematicMode = IntroCinematicMode.NONE;
+        KeepInventoryOnDeath = false;
     }
 
-    public void BroadcastLocation(Vector3 location, Vector3 velocity, Quaternion bodyRotation, Quaternion aimingRotation, Optional<VehicleMovementData> vehicle)
+    public void BroadcastLocation(Vector3 location, Vector3 velocity, Quaternion bodyRotation, Quaternion aimingRotation)
     {
         if (!PlayerId.HasValue)
         {
             return;
         }
 
-        Movement movement;
-        if (vehicle.HasValue)
-        {
-            movement = new VehicleMovement(PlayerId.Value, vehicle.Value);
-        }
-        else
-        {
-            movement = new PlayerMovement(PlayerId.Value, location.ToDto(), velocity.ToDto(), bodyRotation.ToDto(), aimingRotation.ToDto());
-        }
+        PlayerMovement playerMovement = new(PlayerId.Value, location.ToDto(), velocity.ToDto(), bodyRotation.ToDto(), aimingRotation.ToDto());
 
-        packetSender.Send(movement);
+        packetSender.Send(playerMovement);
     }
 
     public void AnimationChange(AnimChangeType type, AnimChangeState state)

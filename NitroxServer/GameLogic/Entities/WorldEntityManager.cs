@@ -4,9 +4,11 @@ using NitroxModel.Core;
 using NitroxModel.DataStructures;
 using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.DataStructures.GameLogic.Entities;
+using NitroxModel.DataStructures.GameLogic.Entities.Metadata;
 using NitroxModel.DataStructures.Unity;
 using NitroxModel.DataStructures.Util;
 using NitroxModel.Helper;
+using NitroxModel.Packets;
 using NitroxServer.GameLogic.Entities.Spawning;
 
 namespace NitroxServer.GameLogic.Entities;
@@ -30,11 +32,12 @@ public class WorldEntityManager
     private readonly Dictionary<NitroxId, GlobalRootEntity> globalRootEntitiesById;
 
     private readonly BatchEntitySpawner batchEntitySpawner;
+    private readonly PlayerManager playerManager;
 
     private readonly object worldEntitiesLock;
     private readonly object globalRootEntitiesLock;
 
-    public WorldEntityManager(EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner)
+    public WorldEntityManager(EntityRegistry entityRegistry, BatchEntitySpawner batchEntitySpawner, PlayerManager playerManager)
     {
         List<WorldEntity> worldEntities = entityRegistry.GetEntities<WorldEntity>();
 
@@ -45,6 +48,7 @@ public class WorldEntityManager
                                                .ToDictionary(group => group.Key, group => group.ToDictionary(entity => entity.Id, entity => entity));
         this.entityRegistry = entityRegistry;
         this.batchEntitySpawner = batchEntitySpawner;
+        this.playerManager = playerManager;
 
         worldEntitiesLock = new();
         globalRootEntitiesLock = new();
@@ -67,6 +71,21 @@ public class WorldEntityManager
         }
     }
 
+    public List<GlobalRootEntity> GetPersistentGlobalRootEntities()
+    {
+        // TODO: refactor if there are more entities that should not be persisted
+        return GetGlobalRootEntities(true).Where(entity =>
+        {
+            if (entity.Metadata is CyclopsMetadata cyclopsMetadata)
+            {
+                // Do not save cyclops wrecks
+                return !cyclopsMetadata.IsDestroyed;
+            }
+
+            return true;
+        }).ToList();
+    }
+
     public List<WorldEntity> GetEntities(AbsoluteEntityCell cell)
     {
         lock (worldEntitiesLock)
@@ -80,29 +99,31 @@ public class WorldEntityManager
         return [];
     }
 
-    public Optional<AbsoluteEntityCell> UpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation)
+    public bool TryUpdateEntityPosition(NitroxId id, NitroxVector3 position, NitroxQuaternion rotation, out AbsoluteEntityCell newCell, out WorldEntity worldEntity)
     {
-        Optional<WorldEntity> opEntity = entityRegistry.GetEntityById<WorldEntity>(id);
-
-        if (!opEntity.HasValue)
+        lock (worldEntitiesLock)
         {
-            Log.Debug("Could not update entity position because it was not found (maybe it was recently picked up)");
-            return Optional.Empty;
+            if (!entityRegistry.TryGetEntityById(id, out worldEntity))
+            {
+                Log.WarnOnce($"[{nameof(WorldEntityManager)}] Can't update entity position of {id} because it isn't registered");
+                newCell = null;
+                return false;
+            }
+
+            AbsoluteEntityCell oldCell = worldEntity.AbsoluteEntityCell;
+
+            worldEntity.Transform.Position = position;
+            worldEntity.Transform.Rotation = rotation;
+
+            newCell = worldEntity.AbsoluteEntityCell;
+            
+            if (oldCell != newCell)
+            {
+                EntitySwitchedCells(worldEntity, oldCell, newCell);
+            }
+
+            return true;
         }
-
-        WorldEntity entity = opEntity.Value;
-        AbsoluteEntityCell oldCell = entity.AbsoluteEntityCell;
-
-        entity.Transform.Position = position;
-        entity.Transform.Rotation = rotation;
-
-        AbsoluteEntityCell newCell = entity.AbsoluteEntityCell;
-        if (oldCell != newCell)
-        {
-            EntitySwitchedCells(entity, oldCell, newCell);
-        }
-
-        return Optional.Of(newCell);
     }
 
     public Optional<Entity> RemoveGlobalRootEntity(NitroxId entityId, bool removeFromRegistry = true)
@@ -116,22 +137,27 @@ public class WorldEntityManager
                 // to make sure that they won't be removed
                 if (entityRegistry.TryGetEntityById(entityId, out GlobalRootEntity globalRootEntity))
                 {
-                    List<PlayerWorldEntity> playerEntities = FindPlayerEntitiesInChildren(globalRootEntity);
-                    foreach (PlayerWorldEntity childPlayerEntity in playerEntities)
-                    {
-                        // Reparent the entity on top of GlobalRoot
-                        globalRootEntity.ChildEntities.Remove(childPlayerEntity);
-                        childPlayerEntity.ParentId = null;
-
-                        // Make sure the PlayerEntity is correctly registered
-                        AddOrUpdateGlobalRootEntity(childPlayerEntity);
-                    }
+                    MovePlayerChildrenToRoot(globalRootEntity);
                 }
                 removedEntity = entityRegistry.RemoveEntity(entityId);
             }
             globalRootEntitiesById.Remove(entityId);
         }
         return removedEntity;
+    }
+
+    public void MovePlayerChildrenToRoot(GlobalRootEntity globalRootEntity)
+    {
+        List<PlayerWorldEntity> playerEntities = FindPlayerEntitiesInChildren(globalRootEntity);
+        foreach (PlayerWorldEntity childPlayerEntity in playerEntities)
+        {
+            // Reparent the entity on top of GlobalRoot
+            globalRootEntity.ChildEntities.Remove(childPlayerEntity);
+            childPlayerEntity.ParentId = null;
+
+            // Make sure the PlayerEntity is correctly registered
+            AddOrUpdateGlobalRootEntity(childPlayerEntity);
+        }
     }
 
     public void TrackEntityInTheWorld(WorldEntity entity)
@@ -191,7 +217,8 @@ public class WorldEntityManager
     {            
         IMap map = NitroxServiceLocator.LocateService<IMap>();
 
-        int totalEntites = 0;
+        int totalBatches = map.DimensionsInBatches.X * map.DimensionsInBatches.Y * map.DimensionsInBatches.Z;
+        int batchesLoaded = 0;
 
         for (int x = 0; x < map.DimensionsInBatches.X; x++)
         {
@@ -204,13 +231,13 @@ public class WorldEntityManager
 
                     Log.Debug($"Loaded {spawned} entities from batch ({x}, {y}, {z})");
 
-                    totalEntites += spawned;
+                    batchesLoaded++;
                 }
             }
 
-            if (totalEntites > 0)
+            if (batchesLoaded > 0)
             {
-                Log.Info($"Loading : {(int)((totalEntites/ 709531) * 100)}%");
+                Log.Info($"Loading : {(int)(100f * batchesLoaded / totalBatches)}%");
             }
         }
     }
@@ -259,7 +286,7 @@ public class WorldEntityManager
             return; // We don't care what cell a global root entity resides in.  Only phasing entities.
         }
 
-        if (oldCell.BatchId != newCell.BatchId)
+        if (oldCell != newCell)
         {
             lock (worldEntitiesLock)
             {
@@ -268,6 +295,15 @@ public class WorldEntityManager
 
                 // Automatically add entity to its new cell
                 RegisterWorldEntityInCell(entity, newCell);
+                
+                // It can happen for some players that the entity moves to a loaded cell of theirs, but that they hadn't spawned it in the first place
+                foreach (Player player in playerManager.ConnectedPlayers())
+                {
+                    if (player.HasCellLoaded(newCell) && !player.HasCellLoaded(oldCell))
+                    {
+                        player.SendPacket(new SpawnEntities(entity));
+                    }
+                }
             }
         }
     }
@@ -284,16 +320,18 @@ public class WorldEntityManager
         }
     }
 
-    public bool TryDestroyEntity(NitroxId entityId, out Optional<Entity> entity)
+    public bool TryDestroyEntity(NitroxId entityId, out Entity entity)
     {
-        entity = entityRegistry.RemoveEntity(entityId);
+        Optional<Entity> optEntity = entityRegistry.RemoveEntity(entityId);
 
-        if (!entity.HasValue)
+        if (!optEntity.HasValue)
         {
+            entity = null;
             return false;
         }
+        entity = optEntity.Value;
 
-        if (entity.Value is WorldEntity worldEntity)
+        if (entity is WorldEntity worldEntity)
         {
             StopTrackingEntity(worldEntity);
         }

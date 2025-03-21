@@ -12,16 +12,12 @@ using Math = System.Math;
 
 namespace NitroxClient.GameLogic.InitialSync;
 
-public class PlayerPositionInitialSyncProcessor : InitialSyncProcessor
+public sealed class PlayerPositionInitialSyncProcessor : InitialSyncProcessor
 {
-    private static readonly Vector3 spawnRelativeToEscapePod = new Vector3(0.9f, 2.1f, 0);
+    private static readonly Vector3 spawnRelativeToEscapePod = new(0.9f, 2.1f, 0);
 
-    private readonly IPacketSender packetSender;
-
-    public PlayerPositionInitialSyncProcessor(IPacketSender packetSender)
+    public PlayerPositionInitialSyncProcessor()
     {
-        this.packetSender = packetSender;
-
         AddDependency<PlayerInitialSyncProcessor>();
         AddDependency<GlobalRootInitialSyncProcessor>();
     }
@@ -71,23 +67,17 @@ public class PlayerPositionInitialSyncProcessor : InitialSyncProcessor
         }
 
         Player.main.SetCurrentSub(subRoot, true);
-        if (subRoot.isBase)
+        if (subRoot.TryGetComponent(out Base @base))
         {
-            // If the player's in a base, we don't need to wait for the world to load
-            Player.main.cinematicModeActive = false;
-            yield break;
+            SetupPlayerIfInWaterPark(@base);
         }
 
-        Transform rootTransform = subRoot.transform;
-        Quaternion vehicleAngle = rootTransform.rotation;
-        // "position" is a relative position and "positionInVehicle" an absolute position
-        Vector3 positionInVehicle = vehicleAngle * position + rootTransform.position;
-        Player.main.SetPosition(positionInVehicle, rotation * vehicleAngle);
-        Player.main.cinematicModeActive = false;
+        // If the player's in a base/cyclops we don't need to wait for the world to load
         Player.main.UpdateIsUnderwater();
+        Player.main.cinematicModeActive = false;
     }
 
-    private void AttachPlayerToEscapePod(NitroxId escapePodId)
+    private static void AttachPlayerToEscapePod(NitroxId escapePodId)
     {
         GameObject escapePod = NitroxEntity.RequireObjectFrom(escapePodId);
 
@@ -100,4 +90,27 @@ public class PlayerPositionInitialSyncProcessor : InitialSyncProcessor
         Player.main.currentEscapePod = escapePod.GetComponent<EscapePod>();
     }
 
+    private static void SetupPlayerIfInWaterPark(Base @base)
+    {
+        foreach (Transform baseChild in @base.transform)
+        {
+            if (baseChild.TryGetComponent(out WaterPark waterPark))
+            {
+                if (waterPark is LargeRoomWaterPark)
+                {
+                    // LargeRoomWaterPark.VerifyPlayerWaterPark sets Player.main.currentWaterPark to the right value
+                    waterPark.VerifyPlayerWaterPark(Player.main);
+                }
+                else if (waterPark.IsPointInside(Player.main.transform.position))
+                {
+                    Player.main.currentWaterPark = waterPark;
+                }
+            }
+
+            if (Player.main.currentWaterPark)
+            {
+                return;
+            }
+        }
+    }
 }

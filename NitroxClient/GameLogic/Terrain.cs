@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using NitroxClient.Communication.Abstract;
-using NitroxClient.Map;
 using NitroxModel.DataStructures.GameLogic;
 using NitroxModel.Packets;
 using NitroxModel_Subnautica.DataStructures;
@@ -14,23 +13,19 @@ public class Terrain
 {
     private readonly IMultiplayerSession multiplayerSession;
     private readonly IPacketSender packetSender;
-    private readonly VisibleCells visibleCells;
-    private readonly VisibleBatches visibleBatches;
 
+    private readonly HashSet<AbsoluteEntityCell> visibleCells = [];
     private readonly List<AbsoluteEntityCell> addedCells = [];
     private readonly List<AbsoluteEntityCell> removedCells = [];
-    
+
     private bool cellsPendingSync;
-    private bool batchesPendingSync;
     private float bufferedTime = 0f;
     private const float TIME_BUFFER = 0.05f;
 
-    public Terrain(IMultiplayerSession multiplayerSession, IPacketSender packetSender, VisibleCells visibleCells, VisibleBatches visibleBatches)
+    public Terrain(IMultiplayerSession multiplayerSession, IPacketSender packetSender)
     {
         this.multiplayerSession = multiplayerSession;
         this.packetSender = packetSender;
-        this.visibleCells = visibleCells;
-        this.visibleBatches = visibleBatches;
     }
 
     public void CellLoaded(Int3 batchId, Int3 cellId, int level)
@@ -75,7 +70,6 @@ public class Terrain
 
             bufferedTime = 0f;
         }
-
     }
 
     /// <summary>

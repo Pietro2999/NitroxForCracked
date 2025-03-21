@@ -10,8 +10,10 @@ using NitroxClient.GameLogic.Bases;
 using NitroxClient.GameLogic.ChatUI;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.Abstract;
 using NitroxClient.GameLogic.PlayerLogic.PlayerModel.ColorSwap;
+using NitroxClient.MonoBehaviours.Cyclops;
 using NitroxClient.MonoBehaviours.Discord;
 using NitroxClient.MonoBehaviours.Gui.MainMenu;
+using NitroxClient.MonoBehaviours.Gui.MainMenu.ServerJoin;
 using NitroxModel.Core;
 using NitroxModel.Packets;
 using NitroxModel.Packets.Processors.Abstract;
@@ -36,7 +38,12 @@ namespace NitroxClient.MonoBehaviours
         /// <summary>
         ///     True if multiplayer is loaded and client is connected to a server.
         /// </summary>
-        public static bool Active => Main != null && Main.multiplayerSession.Client.IsConnected;
+        public static bool Active => Main && Main.multiplayerSession.Client.IsConnected;
+
+        /// <summary>
+        ///     True if multiplayer is loaded and player has successfully joined a server.
+        /// </summary>
+        public static bool Joined => Main && Main.multiplayerSession.CurrentState.CurrentStage == MultiplayerSessionConnectionStage.SESSION_JOINED;
 
         public void Awake()
         {
@@ -72,6 +79,7 @@ namespace NitroxClient.MonoBehaviours
             }
         }
 
+        public static event Action OnLoadingComplete;
         public static event Action OnBeforeMultiplayerStart;
         public static event Action OnAfterMultiplayerEnd;
 
@@ -90,6 +98,7 @@ namespace NitroxClient.MonoBehaviours
             else
             {
                 SetLoadingComplete();
+                OnLoadingComplete?.Invoke();
             }
         }
 
@@ -111,6 +120,7 @@ namespace NitroxClient.MonoBehaviours
             yield return new WaitUntil(() => Main.InitialSyncCompleted);
 
             SetLoadingComplete();
+            OnLoadingComplete?.Invoke();
         }
 
         public void ProcessPackets()
@@ -167,21 +177,14 @@ namespace NitroxClient.MonoBehaviours
             gameObject.AddComponent<PlayerStatsBroadcaster>();
             gameObject.AddComponent<EntityPositionBroadcaster>();
             gameObject.AddComponent<BuildingHandler>();
+            gameObject.AddComponent<MovementBroadcaster>();
+            VirtualCyclops.Initialize();
         }
 
         public void StopCurrentSession()
         {
             SceneManager.sceneLoaded -= SceneManager_sceneLoaded;
-
-            if (multiplayerSession.CurrentState.CurrentStage != MultiplayerSessionConnectionStage.DISCONNECTED)
-            {
-                multiplayerSession.Disconnect();
-            }
-
             OnAfterMultiplayerEnd?.Invoke();
-
-            //Always do this last.
-            NitroxServiceLocator.EndCurrentLifetimeScope();
         }
 
         private static void SetLoadingComplete()
@@ -222,7 +225,7 @@ namespace NitroxClient.MonoBehaviours
             {
                 // If we just disconnected from a multiplayer session, then we need to kill the connection here.
                 // Maybe a better place for this, but here works in a pinch.
-                StopCurrentSession();
+                JoinServerBackend.StopMultiplayerClient();
                 SceneCleaner.Open();
             }
         }

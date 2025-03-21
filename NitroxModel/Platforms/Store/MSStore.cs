@@ -10,9 +10,6 @@ namespace NitroxModel.Platforms.Store;
 
 public sealed class MSStore : IGamePlatform
 {
-    private static MSStore instance;
-    public static MSStore Instance => instance ??= new MSStore();
-
     public string Name => "Microsoft Store";
     public Platform Platform => Platform.MICROSOFT;
 
@@ -32,14 +29,14 @@ public sealed class MSStore : IGamePlatform
         throw new NotImplementedException("Unnecessary to get platform executable");
     }
 
-    public async Task<ProcessEx> StartGameAsync(string pathToGameExe)
+    public async Task<ProcessEx> StartGameAsync(string pathToGameExe, string subnauticaLaunchArguments = "")
     {
         return await Task.FromResult(
             ProcessEx.Start(
                 @"C:\Windows\System32\cmd.exe",
                 null,
                 Path.GetDirectoryName(pathToGameExe),
-                @$"/C start /b {pathToGameExe} -nitrox ""{NitroxUser.LauncherPath}""",
+                @$"/C start /b {pathToGameExe} --nitrox ""{NitroxUser.LauncherPath}"" {subnauticaLaunchArguments}",
                 createWindow: false)
         );
     }

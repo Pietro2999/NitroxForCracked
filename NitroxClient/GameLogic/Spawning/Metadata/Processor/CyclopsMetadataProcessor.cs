@@ -29,6 +29,7 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
             ChangeSonarMode(cyclops, metadata.SonarOn);
             SetEngineState(cyclops, metadata.EngineOn);
             SetHealth(cyclops, metadata.Health);
+            SetDestroyed(cyclops, metadata.IsDestroyed);
         }
     }
 
@@ -42,15 +43,18 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
             return;
         }
 
+        // During initial sync or when the cyclops HUD isn't shown (from outside of the cyclops)
         if (Player.main.currentSub != engineState.subRoot)
         {
-            engineState.startEngine = !isOn;
+            engineState.startEngine = isOn;
+            engineState.subRoot.BroadcastMessage(nameof(CyclopsMotorMode.InvokeChangeEngineState), isOn, SendMessageOptions.RequireReceiver);
             engineState.invalidButton = true;
             engineState.Invoke(nameof(CyclopsEngineChangeState.ResetInvalidButton), 2.5f);
-            engineState.subRoot.BroadcastMessage("InvokeChangeEngineState", !isOn, SendMessageOptions.RequireReceiver);
         }
+        // When inside of the cyclops, we play the cinematics
         else
         {
+            // To invoke the whole OnClick method we need to set the right parameters first
             engineState.invalidButton = false;
             using (PacketSuppressor<EntityMetadataUpdate>.Suppress())
             {
@@ -64,7 +68,7 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
         foreach (CyclopsMotorModeButton button in cyclops.GetComponentsInChildren<CyclopsMotorModeButton>(true))
         {
             // At initial sync, this kind of processor is executed before the Start()
-            if (button.subRoot == null)
+            if (!button.subRoot)
             {
                 button.Start();
             }
@@ -145,5 +149,26 @@ public class CyclopsMetadataProcessor : EntityMetadataProcessor<CyclopsMetadata>
     {
         LiveMixin liveMixin = gameObject.RequireComponentInChildren<LiveMixin>(true);
         liveMixinManager.SyncRemoteHealth(liveMixin, health);
+    }
+
+    private void SetDestroyed(GameObject gameObject, bool isDestroyed)
+    {
+        CyclopsDestructionEvent destructionEvent = gameObject.RequireComponentInChildren<CyclopsDestructionEvent>(true);
+
+        // Don't play VFX and SFX if the Cyclops is already destroyed or was spawned in as destroyed
+        if (destructionEvent.subRoot.subDestroyed == isDestroyed) return;
+
+        if (isDestroyed)
+        {
+            // Use packet suppressor as sentinel so the patch callback knows not to spawn loot
+            using (PacketSuppressor<EntitySpawnedByClient>.Suppress())
+            {
+                destructionEvent.DestroyCyclops();
+            }
+        }
+        else
+        {
+            destructionEvent.RestoreCyclops();
+        }
     }
 }

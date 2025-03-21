@@ -88,8 +88,12 @@ public class EntitySimulation
         foreach (GlobalRootEntity entity in worldEntityManager.GetGlobalRootEntities())
         {
             simulationOwnershipData.TryToAcquire(entity.Id, player, SimulationLockType.TRANSIENT);
+            if (!simulationOwnershipData.TryGetLock(entity.Id, out SimulationOwnershipData.PlayerLock playerLock))
+            {
+                continue;
+            }
             bool doesEntityMove = ShouldSimulateEntityMovement(entity);
-            SimulatedEntity simulatedEntity = new(entity.Id, simulationOwnershipData.GetPlayerForLock(entity.Id).Id, doesEntityMove, SimulationLockType.TRANSIENT);
+            SimulatedEntity simulatedEntity = new(entity.Id, playerLock.Player.Id, doesEntityMove, playerLock.LockType);
             simulatedEntities.Add(simulatedEntity);
         }
         return simulatedEntities;
@@ -98,21 +102,34 @@ public class EntitySimulation
     private void AssignEntitiesToOtherPlayers(Player oldPlayer, IEnumerable<Entity> entities, List<SimulatedEntity> ownershipChanges)
     {
         List<Player> otherPlayers = playerManager.GetConnectedPlayersExcept(oldPlayer);
+
         foreach (Entity entity in entities)
         {
-            NitroxId id = entity.Id;
-            foreach (Player player in otherPlayers)
+            if (TryAssignEntityToPlayers(otherPlayers, entity, out SimulatedEntity simulatedEntity))
             {
-                if (player.CanSee(entity) && simulationOwnershipData.TryToAcquire(id, player, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
-                {
-                    bool doesEntityMove = entity is WorldEntity worldEntity && ShouldSimulateEntityMovement(worldEntity);
-                    ownershipChanges.Add(new SimulatedEntity(id, player.Id, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE));
-
-                    Log.Verbose($"Player {player.Name} has taken over simulating {id}");
-                    break;
-                }
+                ownershipChanges.Add(simulatedEntity);
             }
         }
+    }
+
+    public bool TryAssignEntityToPlayers(List<Player> players, Entity entity, out SimulatedEntity simulatedEntity)
+    {
+        NitroxId id = entity.Id;
+        
+        foreach (Player player in players)
+        {
+            if (player.CanSee(entity) && simulationOwnershipData.TryToAcquire(id, player, DEFAULT_ENTITY_SIMULATION_LOCKTYPE))
+            {
+                bool doesEntityMove = entity is WorldEntity worldEntity && ShouldSimulateEntityMovement(worldEntity);
+
+                Log.Verbose($"Player {player.Name} has taken over simulating {id}");
+                simulatedEntity = new(id, player.Id, doesEntityMove, DEFAULT_ENTITY_SIMULATION_LOCKTYPE);
+                return true;
+            }
+        }
+        
+        simulatedEntity = null;
+        return false;
     }
 
     private List<WorldEntity> FilterSimulatableEntities(Player player, List<WorldEntity> entities)

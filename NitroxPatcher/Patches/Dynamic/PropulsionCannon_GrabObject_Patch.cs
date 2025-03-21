@@ -1,5 +1,6 @@
-﻿using System.Reflection;
+using System.Reflection;
 using NitroxClient.GameLogic;
+using NitroxClient.GameLogic.PlayerLogic;
 using NitroxClient.GameLogic.Simulation;
 using NitroxClient.MonoBehaviours;
 using NitroxClient.MonoBehaviours.Gui.HUD;
@@ -33,6 +34,11 @@ public sealed partial class PropulsionCannon_GrabObject_Patch : NitroxPatch, IDy
             return true;
         }
 
+        if (IsInvalidGrabTarget(target))
+        {
+            return false;
+        }
+
         PropulsionGrab context = new(__instance, target);
         LockRequest<PropulsionGrab> lockRequest = new(id, SimulationLockType.EXCLUSIVE, ReceivedSimulationLockResponse, context);
 
@@ -45,7 +51,11 @@ public sealed partial class PropulsionCannon_GrabObject_Patch : NitroxPatch, IDy
     {
         if (lockAquired)
         {
-            EntityPositionBroadcaster.WatchEntity(id);
+            // In case what we grabbed wasn't a vehicle, we'll be watching it with the regular entity position broadcast system
+            if (!Resolve<SimulationOwnership>().TreatVehicleEntity(id, true, SimulationLockType.EXCLUSIVE))
+            {
+                EntityPositionBroadcaster.WatchEntity(id);
+            }
 
             skipPrefixPatch = true;
             context.Cannon.GrabObject(context.GrabbedObject);
@@ -55,5 +65,13 @@ public sealed partial class PropulsionCannon_GrabObject_Patch : NitroxPatch, IDy
         {
             context.GrabbedObject.AddComponent<DenyOwnershipHand>();
         }
+    }
+
+    /// <summary>
+    /// Prevents certain entities like players from being grabbed
+    /// </summary>
+    private static bool IsInvalidGrabTarget(GameObject target)
+    {
+        return target.GetComponent<RemotePlayerIdentifier>();
     }
 }

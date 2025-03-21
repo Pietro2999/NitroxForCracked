@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using NitroxClient.GameLogic.Bases;
-using NitroxClient.MonoBehaviours.Gui.MainMenu;
+using NitroxClient.MonoBehaviours.Gui.MainMenu.ServersList;
 using UnityEngine.Events;
 
 namespace NitroxClient.GameLogic.Settings;
@@ -21,9 +21,9 @@ public class NitroxSettingsManager
 
     /// <summary>
     /// Allows to create new settings
-    /// 
+    ///
     /// Available types : TOGGLE, SLIDER, LIST, BUTTON
-    /// 
+    ///
     /// <example>
     /// <para>Examples :</para>
     /// <code>
@@ -38,7 +38,7 @@ public class NitroxSettingsManager
         AddSetting("Nitrox_StreamerSettings", new Setting("Nitrox_HideIp", NitroxPrefs.HideIp, hide =>
         {
             NitroxPrefs.HideIp.Value = hide;
-            MainMenuMultiplayerPanel.Main.RefreshServerEntries();
+            MainMenuServerListPanel.Main.RefreshServerEntries();
         }));
 
         AddSetting("Nitrox_ResyncSettings", new Setting("Nitrox_ResyncBuildings", () =>
@@ -51,6 +51,10 @@ public class NitroxSettingsManager
 
         AddSetting("Nitrox_BuildingSettings", new Setting("Nitrox_SafeBuilding", NitroxPrefs.SafeBuilding, safe => NitroxPrefs.SafeBuilding.Value = safe));
         AddSetting("Nitrox_BuildingSettings", new Setting("Nitrox_SafeBuildingLog", NitroxPrefs.SafeBuildingLog, safeLog => NitroxPrefs.SafeBuildingLog.Value = safeLog));
+
+        AddSetting("Nitrox_Settings_Bandwidth", new Setting("Nitrox_Settings_LatencyUpdatePeriod", NitroxPrefs.LatencyUpdatePeriod, latencyUpdatePeriod => NitroxPrefs.LatencyUpdatePeriod.Value = (int)latencyUpdatePeriod, 1, 60, NitroxPrefs.LatencyUpdatePeriod.DefaultValue, 1, SliderLabelMode.Int, tooltip: "Nitrox_Settings_HigherForUnstable_Tooltip"));
+        AddSetting("Nitrox_Settings_Bandwidth", new Setting("Nitrox_Settings_SafetyLatencyMargin", NitroxPrefs.SafetyLatencyMargin, safetyLatencyMargin => NitroxPrefs.SafetyLatencyMargin.Value = safetyLatencyMargin, 0.01f, 0.5f, NitroxPrefs.SafetyLatencyMargin.DefaultValue, 0.01f, SliderLabelMode.Float, "0.00", "Nitrox_Settings_HigherForUnstable_Tooltip"));
+        AddSetting("Nitrox_Settings_Bandwidth", new Setting("Nitrox_Settings_OfflineClockSyncDuration", NitroxPrefs.OfflineClockSyncDuration, offlineClockSyncDuration => NitroxPrefs.OfflineClockSyncDuration.Value = (int)offlineClockSyncDuration, 3, 15, NitroxPrefs.OfflineClockSyncDuration.DefaultValue, 1, SliderLabelMode.Int, tooltip: "Nitrox_Settings_HigherForUnstable_Tooltip"));
     }
 
     /// <summary>Adds a setting to the list under a certain heading</summary>
@@ -80,6 +84,12 @@ public class NitroxSettingsManager
         public readonly float SliderMaxValue;
         public readonly float SliderDefaultValue;
         public readonly float SliderStep;
+        public readonly SliderLabelMode LabelMode;
+        /// <summary>
+        /// Examples: "0", "0.00"
+        /// </summary>
+        public string FloatFormat;
+        public readonly string Tooltip;
 
         // List specifics
         public readonly string[] ListItems;
@@ -105,12 +115,15 @@ public class NitroxSettingsManager
         public Setting(string label, NitroxPref nitroxPref, UnityAction<bool> callback) : this(SettingType.TOGGLE, label, nitroxPref, callback) { }
 
         /// <summary>Constructor for a Slider setting</summary>
-        public Setting(string label, NitroxPref nitroxPref, UnityAction<float> callback, float sliderMinValue, float sliderMaxValue, float sliderDefaultValue, float sliderStep) : this(SettingType.SLIDER, label, nitroxPref, callback)
+        public Setting(string label, NitroxPref nitroxPref, UnityAction<float> callback, float sliderMinValue, float sliderMaxValue, float sliderDefaultValue, float sliderStep, SliderLabelMode labelMode, string floatFormat = "0", string tooltip = null) : this(SettingType.SLIDER, label, nitroxPref, callback)
         {
             SliderMinValue = sliderMinValue;
             SliderMaxValue = sliderMaxValue;
             SliderDefaultValue = sliderDefaultValue;
             SliderStep = sliderStep;
+            LabelMode = labelMode;
+            FloatFormat = floatFormat;
+            Tooltip = tooltip;
         }
 
         /// <summary>Constructor for a List setting</summary>
