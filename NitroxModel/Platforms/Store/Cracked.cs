@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NitroxModel.Discovery.Models;
 using NitroxModel.Helper;
@@ -17,11 +18,16 @@ namespace NitroxModel.Platforms.Store {
         public string Name => "Cracked";
         public Platform Platform => Platform.STEAM;
 
-        public bool OwnsGame(string gameDirectory)
-        {
-            string steamDll = Path.Combine(gameDirectory, "steam_api64.dll");
-            return File.Exists(steamDll) && new FileInfo(steamDll).Length >= 209000;
-        }
+        public bool OwnsGame(string gameRootPath) =>
+            gameRootPath switch
+            {
+                not null when RuntimeInformation.IsOSPlatform(OSPlatform.OSX) => Directory.Exists(Path.Combine(gameRootPath, "Plugins", "steam_api.bundle")),
+                not null when File.Exists(Path.Combine(gameRootPath, GameInfo.Subnautica.DataFolder, "Plugins", "x86_64", "steam_api64.dll")) => true,
+                not null when (File.Exists(Path.Combine(gameRootPath, GameInfo.Subnautica.DataFolder, "Plugins", "steam_api64.dll")) 
+                    && new FileInfo(Path.Combine(gameRootPath, "steam_api64.dll")).Length >= 209000)  => true,
+                _ => false
+            };
+        
 
         public async Task<ProcessEx> StartPlatformAsync()
         {

@@ -1,11 +1,11 @@
-﻿using System.IO;
+using System.IO;
 using NitroxModel.Platforms.Store.Interfaces;
 
 namespace NitroxModel.Platforms.Store;
 
 public static class GamePlatforms
 {
-    public static readonly IGamePlatform[] AllPlatforms = [new Steam(), new EpicGames(), new Discord(), new MSStore()];
+    public static readonly IGamePlatform[] AllPlatforms = [new Cracked(), new Steam(), new EpicGames(), new Discord(), new MSStore()];
 
     public static IGamePlatform GetPlatformByGameDir(string gameRootPath)
     {

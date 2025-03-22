@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -59,6 +59,12 @@ public static class NitroxEntryPatch
             throw error;
         }
         FileSystem.Instance.ReplaceFile(modifiedAssemblyCSharp, assemblyCSharp);
+    }
+
+    public static void RemoveAndApply(string subnauticaBasePath)
+    {
+        Remove(subnauticaBasePath);
+        Apply(subnauticaBasePath);
     }
 
     public static void Remove(string subnauticaBasePath)
